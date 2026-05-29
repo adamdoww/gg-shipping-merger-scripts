@@ -1,0 +1,14 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Data (kept out of public repo)
+Production-CSVs/
+Merged-CSVs/
+Sample-CSVs/
+*.csv
+*.xlsx
