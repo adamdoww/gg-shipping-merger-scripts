@@ -14,7 +14,7 @@ There are two ways to use it: a **web app** (easiest, for the client) and a
 A zero-install browser front end — upload two CSVs, click Merge, download the
 Excel file. No Python or terminal required.
 
-**Live app:** _(paste your Streamlit Cloud URL here once deployed)_
+**Live app:** <https://ggshippingmerger.streamlit.app/>
 
 ### How the client uses it
 1. Open the app URL.
