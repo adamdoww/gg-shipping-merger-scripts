@@ -6,6 +6,9 @@ __pycache__/
 # macOS
 .DS_Store
 
+# Streamlit secrets (never commit the password!)
+.streamlit/secrets.toml
+
 # Data (kept out of public repo)
 Production-CSVs/
 Merged-CSVs/

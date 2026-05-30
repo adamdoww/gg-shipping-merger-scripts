@@ -432,6 +432,59 @@ def next_available_path(path: Path) -> Path:
         n += 1
 
 
+# --- Core entry point (shared by CLI and web app) -----------------------------
+
+def merge_orders_and_charges(
+    orders_path: Path,
+    charges_path: Path,
+    output_path: Path,
+) -> dict:
+    """Run the full merge and write the styled .xlsx to ``output_path``.
+
+    This is the single source of truth for the merge logic, called by both the
+    CLI (``main``) and the Streamlit web app. Returns a dict of summary stats.
+    """
+    shipping_costs = load_shipping_costs(charges_path)
+    headers, data_rows = load_orders(orders_path)
+    wb, new_headers, money_col_lookup, last_data_row, totals_row_idx, matched_orders, totals_cache = \
+        build_workbook(headers, data_rows, shipping_costs)
+    style_workbook(wb.active, new_headers, money_col_lookup, last_data_row, totals_row_idx)
+
+    # Tell Excel to force a full recalc when the file is opened (belt + suspenders
+    # alongside the cached <v> values we inject below).
+    wb.calculation.fullCalcOnLoad = True
+
+    wb.save(output_path)
+
+    # Post-save: inject cached results next to each SUM formula so viewers display
+    # the totals immediately instead of showing blank until they recompute.
+    cache_totals_in_xlsx(output_path, totals_row_idx, money_col_lookup, totals_cache)
+
+    formula_count, error_count, cached_totals = check_formula_errors(output_path, totals_row_idx)
+
+    notes_col = len(new_headers)
+    unbilled_count = sum(
+        1 for r in range(2, last_data_row + 1)
+        if wb.active.cell(row=r, column=notes_col).value == NOTE_TEXT
+    )
+
+    return {
+        'output_path': output_path,
+        'num_columns': len(new_headers),
+        'last_column_letter': get_column_letter(len(new_headers)),
+        'data_rows': last_data_row - 1,
+        'matched_orders': matched_orders,
+        'unique_orders_in_charges': len(shipping_costs),
+        'unbilled_count': unbilled_count,
+        'total_shipping_paid': totals_cache[NEW_HEADER_J],
+        'total_company_cost': totals_cache[NEW_HEADER_K],
+        'total_difference': totals_cache[NEW_HEADER_L],
+        'formula_count': formula_count,
+        'error_count': error_count,
+        'cached_totals': cached_totals,
+    }
+
+
 # --- Main ---------------------------------------------------------------------
 
 def main() -> None:
@@ -469,43 +522,21 @@ def main() -> None:
     if output_path.exists() and not args.force:
         output_path = next_available_path(output_path)
 
-    shipping_costs = load_shipping_costs(charges_path)
-    headers, data_rows = load_orders(orders_path)
-    wb, new_headers, money_col_lookup, last_data_row, totals_row_idx, matched_orders, totals_cache = \
-        build_workbook(headers, data_rows, shipping_costs)
-    style_workbook(wb.active, new_headers, money_col_lookup, last_data_row, totals_row_idx)
+    stats = merge_orders_and_charges(orders_path, charges_path, output_path)
 
-    # Tell Excel to force a full recalc when the file is opened (belt + suspenders
-    # alongside the cached <v> values we inject below).
-    wb.calculation.fullCalcOnLoad = True
-
-    wb.save(output_path)
-
-    # Post-save: inject cached results next to each SUM formula so viewers display
-    # the totals immediately instead of showing blank until they recompute.
-    cache_totals_in_xlsx(output_path, totals_row_idx, money_col_lookup, totals_cache)
-
-    formula_count, error_count, cached_totals = check_formula_errors(output_path, totals_row_idx)
-
-    notes_col = len(new_headers)
-    unbilled_count = sum(
-        1 for r in range(2, last_data_row + 1)
-        if wb.active.cell(row=r, column=notes_col).value == NOTE_TEXT
-    )
-
-    print(f'Wrote {output_path}')
-    print(f'  Columns:                       {len(new_headers)} '
-          f'(A..{get_column_letter(len(new_headers))})')
-    print(f'  Data rows:                     {last_data_row - 1}')
-    print(f'  Orders matched to charges:     {matched_orders}')
-    print(f'  Unique orders in charges file: {len(shipping_costs)}')
-    print(f'  Unbilled orders (notes added): {unbilled_count}')
+    print(f'Wrote {stats["output_path"]}')
+    print(f'  Columns:                       {stats["num_columns"]} '
+          f'(A..{stats["last_column_letter"]})')
+    print(f'  Data rows:                     {stats["data_rows"]}')
+    print(f'  Orders matched to charges:     {stats["matched_orders"]}')
+    print(f'  Unique orders in charges file: {stats["unique_orders_in_charges"]}')
+    print(f'  Unbilled orders (notes added): {stats["unbilled_count"]}')
     print(f'  Totals (cached values):        '
-          f'J=${totals_cache[NEW_HEADER_J]:.2f}  '
-          f'K=${totals_cache[NEW_HEADER_K]:.2f}  '
-          f'L=${totals_cache[NEW_HEADER_L]:.2f}')
-    print(f'  Formula cells: {formula_count}   Errors: {error_count}   '
-          f'Cached totals-row values: {cached_totals}/3')
+          f'J=${stats["total_shipping_paid"]:.2f}  '
+          f'K=${stats["total_company_cost"]:.2f}  '
+          f'L=${stats["total_difference"]:.2f}')
+    print(f'  Formula cells: {stats["formula_count"]}   Errors: {stats["error_count"]}   '
+          f'Cached totals-row values: {stats["cached_totals"]}/3')
 
 
 if __name__ == '__main__':
